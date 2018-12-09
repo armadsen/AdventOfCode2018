@@ -6,15 +6,11 @@ class Marble {
         self.index = index
     }
 
-    func marble(offset: Int) -> Marble {
+    func marble(atOffset offset: Int) -> Marble {
         var result = self
         if offset == 0 { return result }
         for _ in 0..<offset.magnitude {
-            if offset > 0 {
-                result = result.nextMarble!
-            } else {
-                result = result.previousMarble!
-            }
+            result = offset > 0 ? result.nextMarble! : result.previousMarble!
         }
         return result
     }
@@ -41,48 +37,30 @@ class Marble {
     var nextMarble: Marble?
 }
 
-class Player {
-
-    init(index: Int) {
-        self.index = index
-    }
-
-    let index: Int
-
-    var marbles = [Marble]()
-
-    var score: Int {
-        return marbles.reduce(0) {
-            $0 + $1.index
-        }
-    }
-}
-
 func highScoreInGameWith(numberOfPlayers: Int, lastMarble: Int) -> Int {
-    var currentMarble = Marble(index: 0)
-    currentMarble.insert(between: currentMarble, and: currentMarble)
+    var current = Marble(index: 0)
+    current.insert(between: current, and: current)
 
-    let players = Array(0..<numberOfPlayers).map { Player(index: $0) }
+    var scores = Array<Int>(repeating: 0, count: numberOfPlayers)
 
     var i = 0
     while true {
-        for player in players {
+        for player in 0..<numberOfPlayers {
             i += 1
             let newMarble = Marble(index: i)
-            if newMarble.index % 23 == 0 && newMarble.index > 0 {
-                player.marbles.append(newMarble)
-                let marbleToKeep = currentMarble.marble(offset: -7)
-                currentMarble = marbleToKeep.nextMarble!
+            if newMarble.index % 23 == 0 {
+                scores[player] += newMarble.index
+                let marbleToKeep = current.marble(atOffset: -7)
+                current = marbleToKeep.nextMarble!
                 marbleToKeep.remove()
-                player.marbles.append(marbleToKeep)
+                scores[player] += marbleToKeep.index
             } else {
-                let mar1 = currentMarble.marble(offset: 1)
-                let mar2 = currentMarble.marble(offset: 2)
-                newMarble.insert(between: mar1, and: mar2)
-                currentMarble = newMarble
+                newMarble.insert(between: current.marble(atOffset: 1), and: current.marble(atOffset: 2))
+                current = newMarble
             }
+            
             if newMarble.index == lastMarble {
-                return players.map { $0.score }.max()!
+                return scores.max()!
             }
         }
     }
