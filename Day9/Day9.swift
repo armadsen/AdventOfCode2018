@@ -8,7 +8,6 @@ class Marble {
 
     func marble(atOffset offset: Int) -> Marble {
         var result = self
-        if offset == 0 { return result }
         for _ in 0..<offset.magnitude {
             result = offset > 0 ? result.nextMarble! : result.previousMarble!
         }
@@ -23,12 +22,8 @@ class Marble {
     }
 
     func remove() {
-        let left = previousMarble
-        let right = nextMarble
-        left?.nextMarble = right
-        right?.previousMarble = left
-        self.nextMarble = nil
-        self.previousMarble = nil
+        previousMarble?.nextMarble = nextMarble
+        nextMarble?.previousMarble = previousMarble
     }
 
     let index: Int
@@ -50,10 +45,10 @@ func highScoreInGameWith(numberOfPlayers: Int, lastMarble: Int) -> Int {
             let newMarble = Marble(index: i)
             if newMarble.index % 23 == 0 {
                 scores[player] += newMarble.index
-                let marbleToKeep = current.marble(atOffset: -7)
-                current = marbleToKeep.nextMarble!
-                marbleToKeep.remove()
-                scores[player] += marbleToKeep.index
+                let marbleToRemove = current.marble(atOffset: -7)
+                current = marbleToRemove.nextMarble!
+                marbleToRemove.remove()
+                scores[player] += marbleToRemove.index
             } else {
                 newMarble.insert(between: current.marble(atOffset: 1), and: current.marble(atOffset: 2))
                 current = newMarble
