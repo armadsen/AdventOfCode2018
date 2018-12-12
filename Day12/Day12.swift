@@ -2,43 +2,8 @@ import Cocoa
 
 let test = false
 
-let initialString = "##.######...#.##.#...#...##.####..###.#.##.#.##...##..#...##.#..##....##...........#.#.#..###.#"
-let testInitialString = "#..#.#..##......###...###"
-
-let inputString = """
-.###. => #
-#.##. => .
-.#.## => #
-...## => .
-###.# => #
-##.## => .
-..... => .
-#..#. => #
-..#.. => #
-#.### => #
-##.#. => .
-..#.# => #
-#.#.# => #
-.##.# => #
-.#..# => #
-#..## => #
-##..# => #
-#...# => .
-...#. => #
-##### => .
-###.. => #
-#.#.. => .
-....# => .
-.#### => #
-..### => .
-..##. => #
-.##.. => .
-#.... => .
-####. => #
-.#.#. => .
-.#... => #
-##... => #
-"""
+let initialString = try! String(contentsOfFile: "initial.txt")
+let inputString = try! String(contentsOfFile: "input.txt")
 
 let testInputString = """
 ...## => #
@@ -57,12 +22,14 @@ let testInputString = """
 ####. => #
 """
 
-let initialInput = (test ? testInitialString : initialString)
-let input = (test ? testInputString : inputString).components(separatedBy: "\n")
-
 func desc(of pots: [Bool]) -> String {
     return pots.map { $0 ? "#" : "." }.joined()
 }
+
+let testInitialString = "#..#.#..##......###...###"
+
+let initialInput = (test ? testInitialString : initialString)
+let input = (test ? testInputString : inputString).components(separatedBy: "\n")
 
 var pots = initialInput.map { $0 == "#" }
 let padding = 5
