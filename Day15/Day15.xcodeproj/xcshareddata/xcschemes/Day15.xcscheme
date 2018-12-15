@@ -63,7 +63,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "~/Development/AdventOfCode2018/Day15/Day15/input.txt"
+            argument = "~/Development/AdventOfCode2018/Day15/input.txt"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>

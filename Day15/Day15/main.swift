@@ -8,22 +8,20 @@
 
 import Foundation
 
-let test = true
+let test = false
 
 let args = ProcessInfo.processInfo.arguments
 let inputPath = (args[1] as NSString).expandingTildeInPath as String
 
 let inputString = try! String(contentsOfFile: inputPath)
 let testInputString = """
-#########
-#G......#
-#.E.#...#
-#..##..G#
-#...##..#
-#...#...#
-#.G...G.#
-#.....G.#
-#########
+#######
+#E..EG#
+#.#G.E#
+#E.##E#
+#G..#.#
+#..E#.#
+#######
 """
 let input = (test ? testInputString : inputString)
 
@@ -40,7 +38,7 @@ struct Location: Hashable {
     }
 }
 
-class Piece: Equatable {
+class Piece: Hashable {
     init(type: PieceType, location: Location) {
         self.type = type
         self.location = location
@@ -74,6 +72,12 @@ class Piece: Equatable {
         return true
     }
 
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(type)
+        hasher.combine(location)
+        hasher.combine(hitPoints)
+    }
+
     let type: PieceType
     var location: Location
     let attackPower = 3
@@ -84,47 +88,38 @@ class Piece: Equatable {
     }
 }
 
-class PathNode: Hashable {
-    init(location: Location) {
-        self.location = location
-    }
-    let location: Location
-    var nextSteps: Set<PathNode> = []
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(location)
-        for step in nextSteps {
-            hasher.combine(step)
-        }
-    }
-
-    static func ==(lhs: PathNode, rhs: PathNode) -> Bool {
-        if lhs.location != rhs.location { return false }
-        return lhs.nextSteps == rhs.nextSteps
-    }
-
-    var minDepth: Int {
-        if nextSteps.count == 0 { return 0 }
-        return (nextSteps.map { $0.minDepth }.min() ?? 0) + 1
-    }
-
-    var shortestNextSteps: Set<PathNode> {
-        var result = Set<PathNode>()
-        var subPathsByMinDepth = [Int : Set<PathNode>]()
-        for step in nextSteps {
-            subPathsByMinDepth[step.minDepth, default: []].insert(step)
-        }
-        if let minKey = subPathsByMinDepth.keys.min(),
-            let subPaths = subPathsByMinDepth[minKey] {
-            result.formUnion(subPaths)
-        }
-        return result
+extension Collection {
+    func get(_ index: Index) -> Element? {
+        guard indices.contains(index) else { return nil }
+        return self[index]
     }
 }
 
-
 func pieceAt(_ location: Location, in pieces: [Piece]) -> Piece? {
     return pieces.first { $0.location == location }
+}
+
+extension Location {
+    var adjacent:  [Location] {
+        return [Location(x: x-1, y: y),
+                Location(x: x+1, y: y),
+                Location(x: x, y: y-1),
+                Location(x: x, y: y+1)]
+    }
+
+    func distances(in pieces: [Piece]) -> [Location : Int] {
+        var queue = adjacent.map { ($0, 1) } // Space, distance
+        var result = [self : 0]
+        while let (next, distance) = queue.first {
+            queue.remove(at: 0)
+            guard let nextPiece = pieceAt(next, in: pieces),
+                nextPiece.type == .empty,
+                result[next] == nil else { continue }
+            result[next] = distance
+            queue.append(contentsOf: next.adjacent.lazy.map({ ($0, distance + 1) }))
+        }
+        return result
+    }
 }
 
 func locationsInReadingOrder(_ locations: [Location]) -> [Location] {
@@ -136,48 +131,35 @@ func piecesInReadingOrder(_ pieces: [Piece]) -> [Piece] {
 }
 
 func squaresAdjacentTo(location: Location, in pieces: [Piece]) -> [Piece] {
-    let x = location.x
-    let y = location.y
-    var result = [Piece]()
-    if let p = pieceAt(Location(x: x-1, y: y), in: pieces) { result.append(p) }
-    if let p = pieceAt(Location(x: x+1, y: y), in: pieces) { result.append(p) }
-    if let p = pieceAt(Location(x: x, y: y-1), in: pieces) { result.append(p) }
-    if let p = pieceAt(Location(x: x, y: y+1), in: pieces) { result.append(p) }
-    return result
+    return location.adjacent.compactMap { pieceAt($0, in: pieces) }
 }
 
 func emptySquaresAdjacentTo(location: Location, in pieces: [Piece]) -> [Piece] {
     return squaresAdjacentTo(location: location, in: pieces).filter { $0.type == .empty }
 }
 
-func piecesByDistance(from start: Piece, in pieces: [Piece], including: [Piece]? = nil) -> [Int : [Piece]] {
-    var result = [Int : [Piece]]()
-    for piece in pieces {
-        if let including = including, !including.contains(piece) {
-            continue
-        }
-        let distance = paths(from: start.location, to: piece.location, in: pieces)?.minDepth ?? Int.max
-        result[distance, default: []].append(piece)
-    }
-    return result
-}
+//func pathsForPieces(from start: Piece, in pieces: [Piece], including: [Piece]? = nil) -> [Piece : PathNode] {
+//    var result = [Piece : PathNode]()
+//    for piece in pieces {
+//        if let including = including, !including.contains(piece) { continue }
+//        if let paths = paths(from: start.location, to: piece.location, in: pieces, excluding: []) {
+//            result[piece] = paths
+//        }
+//    }
+//    return result
+//}
 
-func paths(from start: Location, to end: Location, in pieces: [Piece], excluding: [Location] = []) -> PathNode? {
-    var toExclude = excluding
-    toExclude.append(start)
-
-    let result = PathNode(location: start)
-    let numberOfMoves = start.numberOfMoves(to: end)
-    if numberOfMoves == 0 { return result }
-    let allAdjacent = emptySquaresAdjacentTo(location: start, in: pieces).map { $0.location }
-    for adjacent in allAdjacent where !toExclude.contains(adjacent){
-        if let paths = paths(from: adjacent, to: end, in: pieces, excluding: toExclude) {
-            result.nextSteps.insert(paths)
-        }
-    }
-    if result.nextSteps.count == 0 { return nil }
-    return result
-}
+//func piecesByDistance(from start: Piece, in pieces: [Piece], including: [Piece]? = nil) -> [Int : [Piece]] {
+//    var result = [Int : [Piece]]()
+//    for piece in pieces {
+//        if let including = including, !including.contains(piece) {
+//            continue
+//        }
+//        let distance = paths(from: start.location, to: piece.location, in: pieces, excluding: [])?.minDepth ?? Int.max
+//        result[distance, default: []].append(piece)
+//    }
+//    return result
+//}
 
 let rows = input.components(separatedBy: "\n")
 let board = rows.map { Array($0) }
@@ -231,39 +213,43 @@ func remove(piece: Piece, from pieces: inout [Piece]) {
 func playRound(inputPieces: [Piece]) -> ([Piece], Bool) {
     var newPieces = inputPieces
     var unitsToMove = piecesInReadingOrder(inputPieces.filter { $0.isPlayer })
-    for piece in unitsToMove {
-        switch piece.type {
-        case .elf: fallthrough
-        case .goblin:
-            // Move
-            var adjacentEnemies = squaresAdjacentTo(location: piece.location, in: newPieces).filter { $0.type == piece.type.enemyType }
-            if adjacentEnemies.count == 0 {
-                let allEnemies = newPieces.filter { $0.type == piece.type.enemyType }
-                if allEnemies.count == 0 { return (newPieces, false) }
-                var inRangeSquares = [Piece]()
-                for enemy in allEnemies {
-                    let adjacentSquares = emptySquaresAdjacentTo(location: enemy.location, in: newPieces)
-                    inRangeSquares.append(contentsOf: adjacentSquares)
+    for piece in unitsToMove where piece.hitPoints > 0 {
+        let allEnemies = newPieces.filter { $0.type == piece.type.enemyType }
+        if allEnemies.isEmpty { return (newPieces, false) }
+
+        let inRangeSquares = allEnemies.flatMap { $0.location.adjacent } // Not just empty squares
+        if !inRangeSquares.contains(piece.location) { // Move closer to an enemy
+
+            let distances = piece.location.distances(in: newPieces) // Only open squares
+            var squaresByDistance = [Int: [Location]]()
+            for square in inRangeSquares {
+                if let distance = distances[square] {
+                    squaresByDistance[distance, default:[]].append(square)
                 }
-                let piecesByDist = piecesByDistance(from: piece, in: pieces, including: inRangeSquares)
-                guard let shortestGoalDistance = piecesByDist.keys.sorted().first(where: {
-                    piecesByDist[$0]!.filter { inRangeSquares.contains($0) } != [piece]
-                }) else { continue }
-                let shortestGoals = piecesByDist[shortestGoalDistance]!.filter { inRangeSquares.contains($0) && $0 != piece }
-                guard let firstGoal = piecesInReadingOrder(shortestGoals).first else { continue }
+            }
+            if let shortestGoalDistance = squaresByDistance.keys.min(),
+                let candidateSpaces = squaresByDistance[shortestGoalDistance],
+                let firstGoal = locationsInReadingOrder(candidateSpaces).first {
 
-                if let pathTreeToGoal = paths(from: piece.location, to: firstGoal.location, in: newPieces, excluding: [piece.location]),
-                    let firstStep = pathTreeToGoal.shortestNextSteps.map({ $0.location }).sorted(by: { $0.inReadingOrderIsBefore($1) }).first {
-
-                    // Move to first step along path
+                let targets = firstGoal.distances(in: newPieces)
+                // Calculate best next step by finding the square adjacent to the current position that has the
+                // shortest distance to firstGoal
+                let candidateSteps = piece.location.adjacent.filter { pieceAt($0, in: newPieces)?.type == .empty }
+                var candidateStepsByDistance = [Int : [Location]]()
+                for step in candidateSteps {
+                    guard let distance = targets[step] else { continue }
+                    candidateStepsByDistance[distance, default: []].append(step)
+                }
+                if let bestStepDistance = candidateStepsByDistance.keys.min(),
+                    let bestSteps = candidateStepsByDistance[bestStepDistance],
+                    let firstStep = locationsInReadingOrder(bestSteps).first {
                     move(piece: piece, to: firstStep, in: newPieces)
                 }
-
-                adjacentEnemies = squaresAdjacentTo(location: piece.location, in: newPieces).filter { $0.type == piece.type.enemyType }
             }
+        }
 
-            // Attack
-            if adjacentEnemies.count == 0 { continue }
+        let adjacentEnemies = squaresAdjacentTo(location: piece.location, in: newPieces).filter { $0.type == piece.type.enemyType }
+        if adjacentEnemies.count > 0 { // Attack
             var enemiesByHitPoints: [Int : [Piece]] = adjacentEnemies.reduce([Int :[Piece]]()) {
                 var scratch = $0
                 scratch[$1.hitPoints, default:[]].append($1)
@@ -276,9 +262,8 @@ func playRound(inputPieces: [Piece]) -> ([Piece], Bool) {
                 // Dies
                 unitsToMove.removeAll { $0 == veryWeakest }
                 remove(piece: veryWeakest, from: &newPieces)
+                print("\(veryWeakest.type) died")
             }
-        default:
-            continue
         }
     }
     return (newPieces, true)
@@ -295,5 +280,7 @@ gameLoop: while (true) {
     numRounds += 1
 }
 
+print("\nAfter \(numRounds) rounds:")
+printBoard(pieces)
 let remainingHitPoints = pieces.filter { $0.isPlayer }.map { $0.hitPoints }.reduce(0, +)
 print("part 1: \(numRounds) * \(remainingHitPoints) = \(remainingHitPoints * numRounds)")
