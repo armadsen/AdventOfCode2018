@@ -110,7 +110,9 @@ func printScan(_ grid: [[Square]]) {
     for row in rows {
         print(row)
     }
-    print("\n")
+    print("\n\n")
+    print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+    print("\n\n")
 }
 
 enum Position {
@@ -118,7 +120,14 @@ enum Position {
 }
 
 func squareAt(location: Location, in grid: [[Square]]) -> Square? {
-    return grid.flatMap({ $0 }).first(where: { $0.location == location })
+    let minX = grid[0][0].location.x
+
+    let minY = grid[0][0].location.y
+    let (x, y) = (location.x - minX, location.y - minY)
+    guard 0 < y && y < grid.count else { return nil }
+    let row = grid[y]
+    guard 0 < x && x < row.count else { return nil }
+    return row[x]
 }
 
 func squareRelative(to location: Location, position: Position, in grid: [[Square]]) -> Square {
@@ -127,28 +136,6 @@ func squareRelative(to location: Location, position: Position, in grid: [[Square
 }
 
 let spring = Location(x: 500, y: 0)
-
-func waterCanEscapeLeft(of location: Location, in grid: [[Square]]) -> Bool {
-    guard let row = grid.filter({ $0.first(where: { $0.location == location }) != nil }).first else {
-        return true
-    }
-    let allClay = row.filter { $0.fillType == .clay }
-    let clayOnLeft = allClay.last(where: { $0.location.x < location.x })
-    if (clayOnLeft == nil) { return true }
-
-    return location.relativeLocation(.below).fillType != .water
-}
-
-func waterCanEscapeRight(of location: Location, in grid: [[Square]]) -> Bool {
-    guard let row = grid.filter({ $0.first(where: { $0.location == location }) != nil }).first else {
-        return true
-    }
-    let allClay = row.filter { $0.fillType == .clay }
-    let clayOnRight = allClay.first(where: { $0.location.x > location.x })
-    if (clayOnRight == nil) { return true }
-
-    let squareBelow = location.relativeLocation(.below)
-}
 
 func waterCanEscapeFrom(_ location: Location, in grid: [[Square]]) -> Bool {
     guard let row = grid.filter({ $0.first(where: { $0.location == location }) != nil }).first else {
@@ -170,45 +157,39 @@ func waterCanEscapeFrom(_ location: Location, in grid: [[Square]]) -> Bool {
 }
 
 func waterTick(grid: [[Square]]) {
-    let allSquares = grid.flatMap { $0 }
+    let allSquares = grid.flatMap { $0 }.reversed()
     for square in allSquares where square.fillType.isWet {
         let below = squareRelative(to: square.location, position: .below, in: grid)
         let left = squareRelative(to: square.location, position: .left, in: grid)
         let right = squareRelative(to: square.location, position: .right, in: grid)
-        switch square.fillType {
-        case .spring: fallthrough
-        case .wetSand:
-            if !below.fillType.isWet {
-                below.fillType = .wetSand
-            } else {
-                if !waterCanEscapeFrom(square.location, in: grid) {
+        square.fillType = .wetSand
+        var didMove = false
+
+        func wet(square: Square) -> Bool {
+            switch square.fillType {
+            case .sand:
+                square.fillType = .wetSand
+                return true
+            case .wetSand:
+                return true
+            default: return false
+            }
+        }
+
+        if !wet(square: below) {
+            // Didn't fall, so distribute to left/right
+            if left.fillType == .wetSand || !wet(square:left) {
+                // Didn't wet left, so wet right
+                if !wet(square: right) {
+                    // Didn't wet right, so fill/saturate
                     square.fillType = .water
-                    left.fillType = .water
-                    right.fillType = .water
-                } else {
-                    if !waterCanEscapeLeft(of: square.location, in: grid) {
-                        left.fillType = .wetSand
-                    }
-                    if !waterCanEscapeRight(of: square.location, in: grid) {
-                        right.fillType = .wetSand
-                    }
                 }
             }
-        case .water:
-            if below.fillType == .clay || below.fillType.isWet {
-                if left.fillType != .clay {
-                    left.fillType = .water
-                }
-                if right.fillType != .clay {
-                    right.fillType = .water
-                }
-            }
-        default: break
         }
     }
 }
 
-let clayLocations = input.flatMap { Location.locations(from: $0) }
+let clayLocations = Set(input.flatMap { Location.locations(from: $0) })
 let minX = clayLocations.map { $0.x }.min()!-1
 let maxX = clayLocations.map { $0.x }.max()!+1
 let minY = clayLocations.map { $0.y }.min()!
@@ -219,7 +200,7 @@ for y in 0...maxY {
     var row = [Square]()
     for x in minX...maxX {
         let loc = Location(x: x, y: y)
-        if clayLocations.first(where: { $0 == loc }) != nil {
+        if clayLocations.contains(loc) {
             row.append(Square(fillType: .clay, location: loc))
         } else if loc == spring {
             row.append(Square(fillType: .spring, location: loc))
@@ -232,29 +213,36 @@ for y in 0...maxY {
 print("Initial:")
 printScan(grid)
 
+func waterAmount(range: (xMin: Int, xMax: Int, yMin: Int, yMax: Int), in grid: [[Square]]) -> Int {
+    let allWater = grid.flatMap { $0 }.filter {
+        $0.location.x >= range.xMin &&
+            $0.location.y >= range.yMin &&
+            $0.location.x <= range.xMax &&
+            $0.location.y <= range.yMax
+        }.filter {
+            $0.fillType.isWet
+    }
+    return allWater.count
+}
+
 var amountOfWater = 0
 var numTicks = 0
 while true {
     waterTick(grid: grid)
     numTicks += 1
-    print("After \(numTicks)")
-    printScan(grid)
+    print("Tick \(numTicks) done")
+    if numTicks % 1000 == 0 {
+        print("After \(numTicks)")
+        printScan(grid)
+    }
 
-    let allWater = grid.flatMap { $0 }.filter {
-        $0.location.x >= minX &&
-            $0.location.y >= minY &&
-            $0.location.x <= maxX &&
-            $0.location.y <= maxY
-        }.filter {
-            $0.fillType.isWet
-    }
-    let newAmountOfWater = allWater.count
-    if newAmountOfWater == amountOfWater {
-        amountOfWater = newAmountOfWater
-        break
-    }
+    let newAmountOfWater = waterAmount(range: (minX, maxX, 0, maxY), in: grid)
+    if newAmountOfWater == amountOfWater { break }
     amountOfWater = newAmountOfWater
 }
-print("Part 1: \(amountOfWater)")
+
+print("After \(numTicks)")
+printScan(grid)
+print("Part 1: \(waterAmount(range: (minX, maxX, minY, maxY), in: grid))")
 
 
