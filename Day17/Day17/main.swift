@@ -8,7 +8,7 @@
 
 import Foundation
 
-let test = true
+let test = false
 
 let args = ProcessInfo.processInfo.arguments
 let inputPath = (args[1] as NSString).expandingTildeInPath as String
@@ -72,10 +72,10 @@ struct Location: Hashable {
 }
 
 enum FillType: Character {
-    case sand = "."
-    case water = "~"
-    case wetSand = "|"
     case clay = "#"
+    case sand = "."
+    case wetSand = "|"
+    case water = "~"
     case spring = "+"
 
     var isWet: Bool {
@@ -119,13 +119,17 @@ enum Position {
     case above, below, left, right, belowLeft, belowRight
 }
 
-func squareAt(location: Location, in grid: [[Square]]) -> Square? {
-    let minX = grid[0][0].location.x
-
+func rowFor(y: Int, in grid: [[Square]]) -> [Square]? {
     let minY = grid[0][0].location.y
-    let (x, y) = (location.x - minX, location.y - minY)
-    guard 0 < y && y < grid.count else { return nil }
-    let row = grid[y]
+    let yi = y - minY
+    guard 0 < yi && yi < grid.count else { return nil }
+    return grid[yi]
+}
+
+func squareAt(location: Location, in grid: [[Square]]) -> Square? {
+    guard let row = rowFor(y: location.y, in: grid) else { return nil }
+    let minX = grid[0][0].location.x
+    let x = location.x - minX
     guard 0 < x && x < row.count else { return nil }
     return row[x]
 }
@@ -135,54 +139,90 @@ func squareRelative(to location: Location, position: Position, in grid: [[Square
     return squareAt(location: newLocation, in: grid) ?? Square(fillType: .sand, location: newLocation)
 }
 
-let spring = Location(x: 500, y: 0)
-
-func waterCanEscapeFrom(_ location: Location, in grid: [[Square]]) -> Bool {
-    guard let row = grid.filter({ $0.first(where: { $0.location == location }) != nil }).first else {
-        return true
+func clayToLeft(of square: Square, in grid: [[Square]]) -> Square? {
+    let sl = square.location
+    let minX = grid[0][0].location.x
+    for xo in 0..<(sl.x - minX) {
+        let x = sl.x - xo
+        if let square = squareAt(location: Location(x: x, y: sl.y), in: grid) {
+            if square.fillType == .clay { return square }
+        }
     }
-    let allClay = row.filter { $0.fillType == .clay }
-    let clayOnLeft = allClay.last(where: { $0.location.x < location.x })
-    let clayOnRight = allClay.first(where: { $0.location.x > location.x })
-    if clayOnLeft == nil || clayOnRight == nil { return true }
+    return nil
+}
 
-    var hasFloor = false
-    let squareBelow = location.relativeLocation(.below)
-    if let nextRow = grid.filter({ $0.first(where: { $0.location == squareBelow }) != nil }).first {
-        let floor = nextRow.filter({ $0.location.x >= clayOnLeft!.location.x && $0.location.x <= clayOnRight!.location.x })
-        hasFloor = floor.filter { $0.fillType == .clay || $0.fillType == .water }.count == floor.count
+func clayToRight(of square: Square, in grid: [[Square]]) -> Square? {
+    let sl = square.location
+    let maxX = grid[0].last!.location.x
+    for x in (sl.x+1)...maxX {
+        if let square = squareAt(location: Location(x: x, y: sl.y), in: grid) {
+            if square.fillType == .clay { return square }
+        }
     }
-
-    return !hasFloor
+    return nil
 }
 
 func waterTick(grid: [[Square]]) {
+    let minX = grid[0][0].location.x
+    let maxX = grid[0].last!.location.x
     let allSquares = grid.flatMap { $0 }.reversed()
-    for square in allSquares where square.fillType.isWet {
-        let below = squareRelative(to: square.location, position: .below, in: grid)
-        let left = squareRelative(to: square.location, position: .left, in: grid)
-        let right = squareRelative(to: square.location, position: .right, in: grid)
-        square.fillType = .wetSand
-        var didMove = false
+    for row in grid.reversed() {
+        for square in row.reversed() where square.fillType.isWet {
+            let below = squareRelative(to: square.location, position: .below, in: grid)
+            let left = squareRelative(to: square.location, position: .left, in: grid)
+            let right = squareRelative(to: square.location, position: .right, in: grid)
+            square.fillType = .wetSand
+            var didMove = false
 
-        func wet(square: Square) -> Bool {
-            switch square.fillType {
-            case .sand:
-                square.fillType = .wetSand
-                return true
-            case .wetSand:
-                return true
-            default: return false
+            func wet(square: Square) -> Bool {
+                switch square.fillType {
+                case .sand:
+                    square.fillType = .wetSand
+                    return true
+                case .wetSand:
+                    return true
+                default: return false
+                }
             }
-        }
 
-        if !wet(square: below) {
-            // Didn't fall, so distribute to left/right
-            if left.fillType == .wetSand || !wet(square:left) {
-                // Didn't wet left, so wet right
-                if !wet(square: right) {
-                    // Didn't wet right, so fill/saturate
-                    square.fillType = .water
+            if below.fillType == .sand || below.fillType == .wetSand {
+                below.fillType = .wetSand
+                continue
+            }
+
+            // Hit either clay or a water surface, so fill left/right until we hit a drop.
+            let leftBoundary = clayToLeft(of: square, in: grid)?.location.x ?? minX
+            let rightBoundary = clayToRight(of: square, in: grid)?.location.x ?? maxX
+            var squaresFilled = [Square]()
+            var foundDrop = false
+            for xo in 0..<(square.location.x - leftBoundary) {
+                let x = square.location.x - xo
+                guard let s = squareAt(location: Location(x: x, y: square.location.y), in: grid),
+                    s.fillType != .clay else { continue }
+                let sb = squareRelative(to: s.location, position: .below, in: grid)
+                s.fillType = .water
+                squaresFilled.append(s)
+                if sb.fillType != .clay && sb.fillType != .water {
+                    foundDrop = true
+                    break
+                }
+            }
+
+            for x in square.location.x+1...rightBoundary {
+                guard let s = squareAt(location: Location(x: x, y: square.location.y), in: grid),
+                    s.fillType != .clay else { continue }
+                let sb = squareRelative(to: s.location, position: .below, in: grid)
+                s.fillType = .water
+                squaresFilled.append(s)
+                if sb.fillType != .clay && sb.fillType != .water {
+                    foundDrop = true
+                    break
+                }
+            }
+
+            if foundDrop {
+                for s in squaresFilled {
+                    s.fillType = .wetSand
                 }
             }
         }
@@ -194,6 +234,7 @@ let minX = clayLocations.map { $0.x }.min()!-1
 let maxX = clayLocations.map { $0.x }.max()!+1
 let minY = clayLocations.map { $0.y }.min()!
 let maxY = clayLocations.map { $0.y }.max()!
+let spring = Location(x: 500, y: 0)
 
 var grid = [[Square]]()
 for y in 0...maxY {
